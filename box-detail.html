@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>箱書詳細簡介</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 30px auto; padding: 20px; background-color: #f4f6f9; line-height: 1.6; }
+        .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); position: relative; }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; margin-bottom: 20px; }
+        h1 { margin: 0; color: #2c3e50; font-size: 24px; }
+        .box-info-tag { background-color: #3498db; color: white; padding: 4px 10px; border-radius: 4px; font-size: 14px; }
+
+        /* 封面與內容版面佈局 */
+        .content-layout { display: flex; gap: 25px; margin-top: 20px; flex-wrap: wrap; }
+        .cover-box { width: 220px; text-align: center; }
+        .cover-img { width: 100%; height: 300px; object-fit: cover; border: 2px dashed #ccc; border-radius: 6px; background-color: #fafafa; }
+        .description-box { flex: 1; min-width: 280px; }
+
+        /* 編輯區域控制 */
+        .edit-panel { background-color: #fff8e1; border: 1px solid #ffe082; padding: 15px; margin-top: 20px; border-radius: 6px; display: none; }
+        textarea { width: 100%; height: 120px; padding: 8px; box-sizing: border-box; font-size: 14px; margin-bottom: 10px; }
+        
+        /* 按鈕樣式 */
+        button { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; }
+        .btn-edit-mode { background-color: #f39c12; }
+        .btn-save { background-color: #27ae60; }
+        .btn-cancel { background-color: #95a5a6; }
+        .btn-back { background-color: #7f8c8d; text-decoration: none; padding: 8px 15px; display: inline-block; color: white; border-radius: 4px; font-weight: bold; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+
+    <a href="javascript:window.close()" class="btn-back">⬅️ 關閉視窗 / 返回清單</a>
+
+    <div class="card">
+        <div class="header-bar">
+            <div>
+                <span id="boxIdTag" class="box-info-tag">載入中...</span>
+                <h1 id="boxTopicTitle" style="display:inline-block; margin-left:10px;">箱書主題</h1>
+            </div>
+            <button id="authBtn" class="btn-edit-mode" onclick="toggleEditAuth()">🛠️ 閱推老師編輯簡介/封面</button>
+        </div>
+
+        <div class="content-layout">
+            <!-- 左側：箱書封面 -->
+            <div class="cover-box">
+                <img id="coverImg" class="cover-img" src="" alt="箱書封面準備中">
+                <p style="font-size:12px; color:#777; margin-top:5px;">箱書推薦封面</p>
+            </div>
+
+            <!-- 右側：文字簡介 -->
+            <div class="description-box">
+                <h3>📖 箱書簡介與導讀：</h3>
+                <p id="boxDescription" style="white-space: pre-wrap; color:#333;">目前尚無設定簡介資料。</p>
+            </div>
+        </div>
+
+        <!-- 編輯表單（老師登入後顯示） -->
+        <div id="editPanel" class="edit-panel">
+            <h3>✏️ 編輯內容（閱推老師專用）</h3>
+            
+            <div style="margin-bottom: 15px;">
+                <label><b>1. 更換箱書封面圖片：</b></label><br>
+                <input type="file" id="imageInput" accept="image/*">
+            </div>
+
+            <div>
+                <label><b>2. 修改導讀/箱書簡介內容：</b></label>
+                <textarea id="editDescText" placeholder="請輸入本箱書的簡介、適合年級或導讀內容..."></textarea>
+            </div>
+
+            <button class="btn-save" onclick="saveDetails()">💾 儲存修改</button>
+            <button class="btn-cancel" onclick="cancelEdit()">取消</button>
+        </div>
+    </div>
+
+    <script>
+        const STAFF_PASSWORD = "1234";
+        let isStaff = false;
+
+        // 取得網址列上的 ?id=BOX-001
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentBoxId = urlParams.get('id') || "BOX-001";
+
+        // 讀取這箱的詳細動態資料（儲存於 localStorage）
+        let boxDetailsMap = JSON.parse(localStorage.getItem("library_box_details")) || {};
+        let currentDetail = boxDetailsMap[currentBoxId] || {
+            cover: "", // Base64 圖片碼
+            desc: "歡迎借閱本箱書！閱推老師可登入編輯此處的導讀內容與封面照片。"
+        };
+
+        // 預設預覽圖片
+        const defaultCover = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='300'><rect width='100%' height='100%' fill='%23eee'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' fill='%23aaa' font-size='16'>尚未上傳封面</text></svg>";
+
+        function initView() {
+            document.getElementById("boxIdTag").innerText = currentBoxId;
+            
+            // 讀取主頁面的主題名稱
+            let boxes = JSON.parse(localStorage.getItem("library_boxes")) || [];
+            let mainBoxData = boxes.find(b => b.id === currentBoxId);
+            document.getElementById("boxTopicTitle").innerText = mainBoxData ? mainBoxData.topic : "箱書內容";
+
+            // 渲染圖片與文字
+            document.getElementById("coverImg").src = currentDetail.cover || defaultCover;
+            document.getElementById("boxDescription").innerText = currentDetail.desc;
+        }
+
+        function toggleEditAuth() {
+            if (!isStaff) {
+                const pwd = prompt("請輸入閱推老師管理密碼：(預設 1234)");
+                if (pwd === STAFF_PASSWORD) {
+                    isStaff = true;
+                    document.getElementById("editPanel").style.display = "block";
+                    document.getElementById("editDescText").value = currentDetail.desc;
+                    alert("已驗證老師權限，您現在可以更換圖片與文字！");
+                } else if (pwd !== null) {
+                    alert("密碼錯誤！");
+                }
+            } else {
+                document.getElementById("editPanel").style.display = "block";
+            }
+        }
+
+        function saveDetails() {
+            const fileInput = document.getElementById("imageInput");
+            const newDesc = document.getElementById("editDescText").value.trim();
+
+            if (newDesc !== "") {
+                currentDetail.desc = newDesc;
+            }
+
+            // 如果有選擇新圖片檔案，轉換為 Base64 並儲存
+            if (fileInput.files && fileInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    currentDetail.cover = e.target.result; // 將圖片轉為字串儲存
+                    saveToStorage();
+                };
+                reader.readAsDataURL(fileInput.files[0]);
+            } else {
+                saveToStorage();
+            }
+        }
+
+        function saveToStorage() {
+            boxDetailsMap[currentBoxId] = currentDetail;
+            localStorage.setItem("library_box_details", JSON.stringify(boxDetailsMap));
+            document.getElementById("editPanel").style.display = "none";
+            initView();
+            alert("✨ 簡介與封面已成功儲存更新！");
+        }
+
+        function cancelEdit() {
+            document.getElementById("editPanel").style.display = "none";
+        }
+
+        initView();
+    </script>
+</body>
+</html>
