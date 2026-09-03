@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>班級箱書預約系統</title>
     <style>
-        body { font-family: "Microsoft JhengHei", Arial, sans-serif; max-width: 1000px; margin: 30px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
+        body { font-family: "Microsoft JhengHei", Arial, sans-serif; max-width: 1100px; margin: 30px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
         h1 { color: #2c3e50; text-align: center; margin-bottom: 25px; }
         
         /* 管理員登入控制區 */
@@ -16,15 +16,15 @@
         
         /* 表格樣式 */
         table { width: 100%; border-collapse: collapse; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #edf2f7; }
-        th { background-color: #34495e; color: #ffffff; font-weight: 600; }
+        th, td { padding: 12px 10px; text-align: center; border-bottom: 1px solid #edf2f7; font-size: 14px; }
+        th { background-color: #34495e; color: #ffffff; font-weight: 600; white-space: nowrap; }
         
         /* 淡紅色閱推老師標頭 */
         th.staff-header-active {
             background-color: #ffebe9 !important;
             color: #c0392b !important;
             border-bottom: 2px solid #f5c6cb !important;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: bold;
         }
 
@@ -35,14 +35,22 @@
         .status-borrowed { background-color: #f8d7da; color: #721c24; }
 
         /* 按鈕與輸入框 */
-        button { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; transition: 0.2s; }
+        button { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: bold; transition: 0.2s; }
         .btn-auth { background-color: #3498db; color: white; }
         .btn-action { background-color: #27ae60; color: white; }
         .btn-disabled { background-color: #e0e0e0; color: #a0a0a0; cursor: not-allowed; }
-        input[type="text"], select { padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        .btn-add { background-color: #8e44ad; color: white; margin-left: 10px; }
+        input[type="text"], select { padding: 5px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; }
         
         .box-link { color: #2980b9; text-decoration: none; font-weight: bold; }
         .box-link:hover { text-decoration: underline; }
+        .opac-link { color: #8e44ad; text-decoration: none; font-size: 12px; }
+
+        /* ✨ 分頁控制區 */
+        .pagination-container { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; background: white; padding: 12px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .pagination-btn { background-color: #ecf0f1; color: #2c3e50; padding: 6px 12px; margin: 0 2px; border-radius: 4px; border: 1px solid #bdc3c7; }
+        .pagination-btn.active { background-color: #3498db; color: white; border-color: #3498db; }
+        .pagination-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -52,6 +60,7 @@
     <div class="auth-bar">
         <div>
             目前身分：<span id="roleBadge" class="role-badge role-reader">📖 一般讀者 (班級老師)</span>
+            <button id="addBoxBtn" class="btn-add" style="display:none;" onclick="addNewBox()">➕ 新增箱書</button>
         </div>
         <button id="authBtn" class="btn-auth" onclick="toggleAuth()">🔑 閱推老師登入</button>
     </div>
@@ -60,8 +69,11 @@
         <thead>
             <tr id="tableHeader">
                 <th>箱號</th>
+                <th>條碼/登錄號</th>
                 <th>箱書主題</th>
                 <th>冊數</th>
+                <th>建議年級</th>
+                <th>館藏查詢</th>
                 <th>目前狀態</th>
                 <th>借閱/預約班級</th>
                 <th>線上動作</th>
@@ -72,82 +84,103 @@
         </tbody>
     </table>
 
+    <!-- ✨ 分頁控制項 -->
+    <div class="pagination-container">
+        <div id="pageInfo" style="font-size:14px; font-weight:bold; color:#555;">顯示第 1 / 1 頁 (共 0 本箱書)</div>
+        <div id="paginationBtns"></div>
+    </div>
+
     <script>
         const STAFF_PASSWORD = "1234";
         let isStaff = false;
+        let currentPage = 1;
+        const PAGE_SIZE = 20; // 核心設定：每頁顯示 20 本箱書
 
-        // 預設預設資料（若 localStorage 沒資料時使用）
-        const defaultBoxes = [
-            { id: "BOX-003", topic: "青少年經典文學", count: 12, status: "已借出", targetClass: "801 班" },
-            { id: "BOX-001", topic: "兒童繪本精選", count: 20, status: "可借閱", targetClass: "-" },
-            { id: "BOX-010", topic: "環保與永續發展", count: 18, status: "可借閱", targetClass: "-" },
-            { id: "BOX-002", topic: "科普探索系列", count: 15, status: "已預約", targetClass: "908 班" }
-        ];
+        // 預設示範資料（無 localStorage 資料時自動生成 25 筆範例）
+        const defaultBoxes = generateSampleBoxes();
 
-        // ✨ 核心排序邏輯：自動將箱號提取數字進行大小排序
+        function generateSampleBoxes() {
+            let samples = [];
+            for (let i = 1; i <= 25; i++) {
+                let padNum = String(i).padStart(3, '0');
+                samples.push({
+                    id: `BOX-${padNum}`,
+                    barcode: `BOX${String(i).padStart(5, '0')}`,
+                    topic: `箱書主題範例 ${i}`,
+                    count: 20 + (i % 5),
+                    grade: `${7 + (i % 3)} 年級`,
+                    opacUrl: "https://opac.library.gov.tw/",
+                    status: i % 3 === 0 ? "已預約" : (i % 5 === 0 ? "已借出" : "可借閱"),
+                    targetClass: i % 3 === 0 ? `${700 + i} 班` : "-"
+                });
+            }
+            return samples;
+        }
+
+        // 核心排序：依箱號數字由小到大排序 (001, 002, 003...)
         function sortBoxes(boxes) {
             return boxes.sort((a, b) => {
                 const numA = parseInt(a.id.replace(/[^0-9]/g, ''), 10) || 0;
                 const numB = parseInt(b.id.replace(/[^0-9]/g, ''), 10) || 0;
-                return numA - numB; // 由小到大自動排序 (例如 1, 2, 3, 10)
+                return numA - numB;
             });
         }
 
-        // 讀取資料並渲染表格
+        // 渲染表格與分頁
         function renderTable() {
             let boxes = JSON.parse(localStorage.getItem("library_boxes")) || defaultBoxes;
-            
-            // 💡 渲染前自動進行箱號排序！
             boxes = sortBoxes(boxes);
+
+            const totalItems = boxes.length;
+            const totalPages = Math.ceil(totalItems / PAGE_SIZE) || 1;
+
+            if (currentPage > totalPages) currentPage = totalPages;
+
+            // 算出現有頁面該顯示的範圍 (例如第1頁: 0~19，第2頁: 20~39)
+            const startIndex = (currentPage - 1) * PAGE_SIZE;
+            const pageBoxes = boxes.slice(startIndex, startIndex + PAGE_SIZE);
 
             const tbody = document.getElementById("boxTableBody");
             const header = document.getElementById("tableHeader");
             tbody.innerHTML = "";
 
-            // 依身分切換標頭樣式
-            if (isStaff) {
-                header.innerHTML = `
-                    <th class="staff-header-active">箱號 (管理)</th>
-                    <th class="staff-header-active">箱書主題</th>
-                    <th class="staff-header-active">冊數</th>
-                    <th class="staff-header-active">目前狀態</th>
-                    <th class="staff-header-active">借閱/預約班級</th>
-                    <th class="staff-header-active">管理操作</th>
-                `;
-            } else {
-                header.innerHTML = `
-                    <th>箱號</th>
-                    <th>箱書主題</th>
-                    <th>冊數</th>
-                    <th>目前狀態</th>
-                    <th>借閱/預約班級</th>
-                    <th>線上動作</th>
-                `;
-            }
+            // 依身分切換標頭顏色
+            const thClass = isStaff ? "staff-header-active" : "";
+            header.innerHTML = `
+                <th class="${thClass}">箱號</th>
+                <th class="${thClass}">條碼/登錄號</th>
+                <th class="${thClass}">箱書主題</th>
+                <th class="${thClass}">冊數</th>
+                <th class="${thClass}">建議年級</th>
+                <th class="${thClass}">館藏查詢</th>
+                <th class="${thClass}">目前狀態</th>
+                <th class="${thClass}">借閱/預約班級</th>
+                <th class="${thClass}">管理與動作</th>
+            `;
 
-            // 繪製每一筆箱書
-            boxes.forEach((box, index) => {
+            // 渲染當頁資料
+            pageBoxes.forEach((box, pageOffset) => {
+                const globalIndex = startIndex + pageOffset; // 計算在總陣列中的實際位置
                 const tr = document.createElement("tr");
 
                 let statusClass = "status-available";
                 if (box.status === "已預約") statusClass = "status-reserved";
                 if (box.status === "已借出") statusClass = "status-borrowed";
 
-                // 動作按鈕或管理選單
                 let actionTdHTML = "";
                 if (isStaff) {
                     actionTdHTML = `
-                        <select onchange="updateStatus(${index}, this.value)">
+                        <select onchange="updateStatus(${globalIndex}, this.value)">
                             <option value="可借閱" ${box.status === '可借閱' ? 'selected' : ''}>可借閱</option>
                             <option value="已預約" ${box.status === '已預約' ? 'selected' : ''}>已預約</option>
                             <option value="已借出" ${box.status === '已借出' ? 'selected' : ''}>已借出</option>
                         </select>
                         <input type="text" placeholder="班級" value="${box.targetClass !== '-' ? box.targetClass : ''}" 
-                               style="width:60px;" onchange="updateClass(${index}, this.value)">
+                               style="width:55px;" onchange="updateClass(${globalIndex}, this.value)">
                     `;
                 } else {
                     if (box.status === "可借閱") {
-                        actionTdHTML = `<button class="btn-action" onclick="reserveBox(${index})">預約借閱</button>`;
+                        actionTdHTML = `<button class="btn-action" onclick="reserveBox(${globalIndex})">預約借閱</button>`;
                     } else {
                         actionTdHTML = `<button class="btn-disabled" disabled>暫無法預約</button>`;
                     }
@@ -155,8 +188,11 @@
 
                 tr.innerHTML = `
                     <td><a href="box-detail.html?id=${box.id}" class="box-link" target="_blank">${box.id} 🔍</a></td>
-                    <td>${box.topic}</td>
+                    <td>${box.barcode || '-'}</td>
+                    <td style="text-align:left; font-weight:bold;">${box.topic}</td>
                     <td>${box.count} 冊</td>
+                    <td>${box.grade || '-'}</td>
+                    <td><a href="${box.opacUrl || '#'}" target="_blank" class="opac-link">🔗 圖書館OPAC</a></td>
                     <td><span class="status-badge ${statusClass}">${box.status}</span></td>
                     <td>${box.targetClass}</td>
                     <td>${actionTdHTML}</td>
@@ -164,11 +200,46 @@
                 tbody.appendChild(tr);
             });
 
-            // 將排序並更新後的資料存回 localStorage
+            // 儲存最新資料狀態
             localStorage.setItem("library_boxes", JSON.stringify(boxes));
+
+            // 繪製分頁按鈕
+            renderPagination(totalPages, totalItems);
         }
 
-        // 切換身分 (讀者 / 閱推老師)
+        // 產生分頁按鈕
+        function renderPagination(totalPages, totalItems) {
+            document.getElementById("pageInfo").innerText = `顯示第 ${currentPage} / ${totalPages} 頁 (共 ${totalItems} 本箱書)`;
+            const btnContainer = document.getElementById("paginationBtns");
+            btnContainer.innerHTML = "";
+
+            // 上一頁按鈕
+            const prevBtn = document.createElement("button");
+            prevBtn.className = "pagination-btn";
+            prevBtn.innerText = "⬅️ 上一頁";
+            prevBtn.disabled = currentPage === 1;
+            prevBtn.onclick = () => { currentPage--; renderTable(); };
+            btnContainer.appendChild(prevBtn);
+
+            // 頁碼數字按鈕
+            for (let i = 1; i <= totalPages; i++) {
+                const pBtn = document.createElement("button");
+                pBtn.className = `pagination-btn ${i === currentPage ? 'active' : ''}`;
+                pBtn.innerText = i;
+                pBtn.onclick = () => { currentPage = i; renderTable(); };
+                btnContainer.appendChild(pBtn);
+            }
+
+            // 下一頁按鈕
+            const nextBtn = document.createElement("button");
+            nextBtn.className = "pagination-btn";
+            nextBtn.innerText = "下一頁 ➡️";
+            nextBtn.disabled = currentPage === totalPages;
+            nextBtn.onclick = () => { currentPage++; renderTable(); };
+            btnContainer.appendChild(nextBtn);
+        }
+
+        // 身分切換
         function toggleAuth() {
             if (!isStaff) {
                 const pwd = prompt("請輸入閱推老師管理密碼：(預設 1234)");
@@ -177,6 +248,7 @@
                     document.getElementById("roleBadge").className = "role-badge role-staff";
                     document.getElementById("roleBadge").innerText = "🛠️ 閱推老師管理模式";
                     document.getElementById("authBtn").innerText = "🚪 登出管理員";
+                    document.getElementById("addBoxBtn").style.display = "inline-block";
                     renderTable();
                 } else if (pwd !== null) {
                     alert("密碼錯誤！");
@@ -186,11 +258,12 @@
                 document.getElementById("roleBadge").className = "role-badge role-reader";
                 document.getElementById("roleBadge").innerText = "📖 一般讀者 (班級老師)";
                 document.getElementById("authBtn").innerText = "🔑 閱推老師登入";
+                document.getElementById("addBoxBtn").style.display = "none";
                 renderTable();
             }
         }
 
-        // 一般老師預約邏輯
+        // 預約邏輯
         function reserveBox(index) {
             let boxes = JSON.parse(localStorage.getItem("library_boxes")) || defaultBoxes;
             boxes = sortBoxes(boxes);
@@ -205,7 +278,7 @@
             }
         }
 
-        // 閱推老師修改狀態
+        // 管理員更新狀態
         function updateStatus(index, newStatus) {
             let boxes = JSON.parse(localStorage.getItem("library_boxes")) || defaultBoxes;
             boxes = sortBoxes(boxes);
@@ -216,7 +289,7 @@
             renderTable();
         }
 
-        // 閱推老師修改班級
+        // 管理員更新班級
         function updateClass(index, newClass) {
             let boxes = JSON.parse(localStorage.getItem("library_boxes")) || defaultBoxes;
             boxes = sortBoxes(boxes);
@@ -226,7 +299,32 @@
             renderTable();
         }
 
-        // 初始化第一次載入
+        // 管理員新增箱書功能
+        function addNewBox() {
+            let boxes = JSON.parse(localStorage.getItem("library_boxes")) || defaultBoxes;
+            const newId = prompt("請輸入新箱號 (例如 BOX-026):");
+            if (!newId) return;
+
+            const newTopic = prompt("請輸入箱書主題:");
+            if (!newTopic) return;
+
+            boxes.push({
+                id: newId.trim(),
+                barcode: newId.trim().replace("-", "00"),
+                topic: newTopic.trim(),
+                count: 20,
+                grade: "通用",
+                opacUrl: "https://opac.library.gov.tw/",
+                status: "可借閱",
+                targetClass: "-"
+            });
+
+            localStorage.setItem("library_boxes", JSON.stringify(boxes));
+            renderTable();
+            alert("✨ 新箱書已成功加入！系統會自動幫您歸位排序。");
+        }
+
+        // 初始化
         renderTable();
     </script>
 </body>
