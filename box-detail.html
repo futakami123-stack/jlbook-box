@@ -9,7 +9,10 @@
         .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.08); position: relative; }
         .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; margin-bottom: 20px; }
         h1 { margin: 0; color: #2c3e50; font-size: 24px; }
+        
+        /* 標籤樣式 */
         .box-info-tag { background-color: #3498db; color: white; padding: 4px 10px; border-radius: 4px; font-size: 14px; }
+        .barcode-tag { background-color: #e67e22; color: white; padding: 4px 10px; border-radius: 4px; font-size: 14px; margin-left: 5px; }
 
         /* 封面與內容版面佈局 */
         .content-layout { display: flex; gap: 25px; margin-top: 20px; flex-wrap: wrap; }
@@ -20,7 +23,8 @@
         /* 編輯區域控制 */
         .edit-panel { background-color: #fff8e1; border: 1px solid #ffe082; padding: 15px; margin-top: 20px; border-radius: 6px; display: none; }
         textarea { width: 100%; height: 120px; padding: 8px; box-sizing: border-box; font-size: 14px; margin-bottom: 10px; }
-        
+        input[type="text"] { width: 100%; padding: 8px; box-sizing: border-box; font-size: 14px; margin-bottom: 15px; }
+
         /* 按鈕樣式 */
         button { padding: 8px 15px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; }
         .btn-edit-mode { background-color: #f39c12; }
@@ -37,9 +41,10 @@
         <div class="header-bar">
             <div>
                 <span id="boxIdTag" class="box-info-tag">載入中...</span>
-                <h1 id="boxTopicTitle" style="display:inline-block; margin-left:10px;">箱書主題</h1>
+                <span id="barcodeTag" class="barcode-tag">條碼/登錄號：未設定</span>
+                <h1 id="boxTopicTitle" style="display:inline-block; margin-left:10px; margin-top:10px;">箱書主題</h1>
             </div>
-            <button id="authBtn" class="btn-edit-mode" onclick="toggleEditAuth()">🛠️ 閱推老師編輯簡介/封面</button>
+            <button id="authBtn" class="btn-edit-mode" onclick="toggleEditAuth()">🛠️ 閱推老師編輯內容</button>
         </div>
 
         <div class="content-layout">
@@ -58,15 +63,20 @@
 
         <!-- 編輯表單（老師登入後顯示） -->
         <div id="editPanel" class="edit-panel">
-            <h3>✏️ 編輯內容（閱推老師專用）</h3>
+            <h3>✏️ 編輯箱書詳細資料（閱推老師專用）</h3>
             
+            <div>
+                <label><b>1. 館藏登錄號 / 條碼號：</b></label>
+                <input type="text" id="barcodeInput" placeholder="例如：BOX00001">
+            </div>
+
             <div style="margin-bottom: 15px;">
-                <label><b>1. 更換箱書封面圖片：</b></label><br>
+                <label><b>2. 更換箱書封面圖片：</b></label><br>
                 <input type="file" id="imageInput" accept="image/*">
             </div>
 
             <div>
-                <label><b>2. 修改導讀/箱書簡介內容：</b></label>
+                <label><b>3. 修改導讀 / 箱書簡介內容：</b></label>
                 <textarea id="editDescText" placeholder="請輸入本箱書的簡介、適合年級或導讀內容..."></textarea>
             </div>
 
@@ -76,7 +86,7 @@
     </div>
 
     <script>
-        const STAFF_PASSWORD = "1234";
+        const STAFF_PASSWORD = "0000";
         let isStaff = false;
 
         // 取得網址列上的 ?id=BOX-001
@@ -85,9 +95,12 @@
 
         // 讀取這箱的詳細動態資料（儲存於 localStorage）
         let boxDetailsMap = JSON.parse(localStorage.getItem("library_box_details")) || {};
+        
+        // 取得目前箱號的資料，如果沒有則建立預設值
         let currentDetail = boxDetailsMap[currentBoxId] || {
-            cover: "", // Base64 圖片碼
-            desc: "歡迎借閱本箱書！閱推老師可登入編輯此處的導讀內容與封面照片。"
+            barcode: currentBoxId.replace("-", "00"), // 預設依箱號推算，例如 BOX-001 預設為 BOX00001
+            cover: "",
+            desc: "歡迎借閱本箱書！閱推老師可登入編輯此處的導讀內容、館藏登錄號與封面照片。"
         };
 
         // 預設預覽圖片
@@ -95,6 +108,7 @@
 
         function initView() {
             document.getElementById("boxIdTag").innerText = currentBoxId;
+            document.getElementById("barcodeTag").innerText = "登錄號：" + (currentDetail.barcode || "未設定");
             
             // 讀取主頁面的主題名稱
             let boxes = JSON.parse(localStorage.getItem("library_boxes")) || [];
@@ -108,12 +122,13 @@
 
         function toggleEditAuth() {
             if (!isStaff) {
-                const pwd = prompt("請輸入閱推老師管理密碼：(預設 1234)");
+                const pwd = prompt("請輸入閱推老師管理密碼：(預設)");
                 if (pwd === STAFF_PASSWORD) {
                     isStaff = true;
                     document.getElementById("editPanel").style.display = "block";
+                    document.getElementById("barcodeInput").value = currentDetail.barcode || "";
                     document.getElementById("editDescText").value = currentDetail.desc;
-                    alert("已驗證老師權限，您現在可以更換圖片與文字！");
+                    alert("已驗證老師權限，您現在可以修改登錄號、圖片與文字！");
                 } else if (pwd !== null) {
                     alert("密碼錯誤！");
                 }
@@ -124,7 +139,10 @@
 
         function saveDetails() {
             const fileInput = document.getElementById("imageInput");
+            const newBarcode = document.getElementById("barcodeInput").value.trim();
             const newDesc = document.getElementById("editDescText").value.trim();
+
+            currentDetail.barcode = newBarcode || "未設定";
 
             if (newDesc !== "") {
                 currentDetail.desc = newDesc;
@@ -148,7 +166,7 @@
             localStorage.setItem("library_box_details", JSON.stringify(boxDetailsMap));
             document.getElementById("editPanel").style.display = "none";
             initView();
-            alert("✨ 簡介與封面已成功儲存更新！");
+            alert("✨ 資料已成功儲存更新！");
         }
 
         function cancelEdit() {
